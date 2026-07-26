@@ -908,3 +908,26 @@ body.dragging { user-select: none; -webkit-user-select: none; cursor: crosshair;
   padding: 9px 6px;
 }
 .backup-row .nav-item svg { width: 17px; height: 17px; }
+
+/* ---------- Touch support (web version) ---------- */
+/* manipulation = pan & pinch stay native, but no double-tap-zoom delay on taps.
+   The press-and-hold drag suppresses scrolling itself once it engages. */
+.wg-day, .cal-block {
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;   /* no iOS long-press callout while holding */
+}
+
+/* Show the touch wording of the calendar hint only on touch-first devices */
+.hint-touch { display: none; }
+@media (pointer: coarse) {
+  .hint-mouse { display: none; }
+  .hint-touch { display: inline; }
+}
+
+@media (max-width: 900px) {
+  /* The Mon–Sun header follows the grid's sideways scroll via JS — hide its own
+     scrollbar so the two can never be scrolled apart by hand. */
+  .week-days { overflow-x: hidden; }
+}

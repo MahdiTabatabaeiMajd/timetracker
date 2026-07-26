@@ -100,7 +100,7 @@
         <div class="week-scroll" id="weekScroll">
           <div class="week-grid" id="weekGrid"></div>
         </div>
-        <p class="hint">Drag an empty area to draw a block, or drag a block to move it to another day or time (hold Alt/⌘ to copy). Click to edit. Point at a block and press ⌘/Ctrl+C, then point anywhere and press ⌘/Ctrl+V to paste.</p>
+        <p class="hint"><span class="hint-mouse">Drag an empty area to draw a block, or drag a block to move it to another day or time (hold Alt/⌘ to copy). Click to edit. Point at a block and press ⌘/Ctrl+C, then point anywhere and press ⌘/Ctrl+V to paste.</span><span class="hint-touch">Tap an empty slot to add a block, or press and hold, then drag to draw one. Tap a block to edit it (Duplicate makes a copy). Press and hold a block to lift it, then drag it to another day or time.</span></p>
       </div>
     </section>
 
@@ -254,6 +254,7 @@
       <button type="button" class="icon-btn danger hidden" id="dialogDelete" aria-label="Delete entry" title="Delete">
         <svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>
       </button>
+      <button type="button" class="btn ghost hidden" id="dialogDuplicate" title="Create a copy of this entry">Duplicate</button>
       <button type="button" class="btn ghost" id="dialogCancel">Cancel</button>
       <button type="submit" class="btn primary" id="dialogSave">Save</button>
     </div>

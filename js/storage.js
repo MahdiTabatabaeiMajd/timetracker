@@ -102,6 +102,10 @@ window.addEventListener("pagehide", () => {
   if (Store._saveTimer && Store.state) Store.saveNow();
 });
 
+/* Expose Store on window: `const` declarations aren't window properties, and the
+   test pages (tests/*.browser.html) need to reach it from their frame. */
+window.Store = Store;
+
 /* ---------- Shared accessors (identical to the server version) ---------- */
 function getProject(id) {
   return Store.state.projects.find(p => p.id === id) || null;

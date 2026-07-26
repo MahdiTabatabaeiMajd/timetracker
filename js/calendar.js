@@ -42,9 +42,15 @@ function initCalendar() {
 
   // Copy/paste: track what the cursor points at, then act on ⌘/Ctrl+C / +V.
   const grid = document.getElementById("weekGrid");
-  grid.addEventListener("mousemove", trackCursor);
-  grid.addEventListener("mouseleave", () => { hoverEntryId = null; cursorGrid = null; });
+  grid.addEventListener("pointermove", trackCursor);
+  grid.addEventListener("pointerleave", () => { hoverEntryId = null; cursorGrid = null; });
   document.addEventListener("keydown", onCalKey);
+
+  // Narrow screens scroll the grid sideways; keep the Mon–Sun header aligned.
+  const weekScroll = document.getElementById("weekScroll");
+  weekScroll.addEventListener("scroll", () => {
+    document.getElementById("weekDays").scrollLeft = weekScroll.scrollLeft;
+  });
 
   updateEntryView();
 }
@@ -140,7 +146,7 @@ function renderCalendar() {
   document.getElementById("weekGrid").innerHTML = gutter + cols;
 
   document.querySelectorAll(".cal-block").forEach(el => {
-    el.addEventListener("mousedown", e => startBlockDrag(e, el));
+    el.addEventListener("pointerdown", e => startBlockDrag(e, el));
     const en = Store.state.entries.find(x => x.id === el.dataset.entry);
     if (en) {
       const p = getProject(en.projectId);
@@ -152,7 +158,7 @@ function renderCalendar() {
   });
 
   document.querySelectorAll(".wg-day").forEach(el =>
-    el.addEventListener("mousedown", startDraw));
+    el.addEventListener("pointerdown", startDraw));
 
   syncHeaderGutter();
   updateNowLine();
@@ -235,24 +241,46 @@ function updateNowLine() {
   todayCol.appendChild(line);
 }
 
-/* ---------- drag to draw ---------- */
+/* ---------- pointer gestures (mouse AND touch) ----------
+   Mouse: press engages a gesture immediately (exactly the old behavior).
+   Touch: hold still for TOUCH_HOLD_MS to engage; moving first means the user is
+   scrolling, so the gesture bows out and the browser pans normally. While a
+   touch gesture is engaged, a non-passive touchmove listener suppresses
+   scrolling so the drag owns the finger. */
+const TOUCH_HOLD_MS = 350;  // press-and-hold delay before a touch drag engages
+const SCROLL_SLOP = 8;      // px of touch movement that means "scrolling, not holding"
+
+/* ---------- drag to draw (mouse: drag; touch: hold, then drag) ---------- */
 function startDraw(e) {
-  if (e.button !== 0 || e.target.closest(".cal-block")) return;
-  e.preventDefault();
+  if (e.button !== 0 || !e.isPrimary || e.target.closest(".cal-block")) return;
 
   const dayEl = e.currentTarget;
+  const touch = e.pointerType !== "mouse";
+  if (!touch) e.preventDefault();          // mouse: stop text selection, as before
+
   const rect = dayEl.getBoundingClientRect();
   const minAt = clientY =>
     clamp(Math.round(((clientY - rect.top) / HOUR_H) * 60 / SNAP_MIN) * SNAP_MIN, 0, DAY_END);
 
   const anchor = minAt(e.clientY);
+  const startX = e.clientX, startY = e.clientY;
   let a = anchor, b = anchor;
+  let engaged = !touch;                    // mouse engages immediately
+  let cancelled = false;
+  let holdTimer = null;
 
-  ghostEl = document.createElement("div");
-  ghostEl.className = "cal-ghost";
-  dayEl.appendChild(ghostEl);
-  document.body.classList.add("dragging");
-  drawGhost(a, Math.max(b, a + SNAP_MIN));
+  function makeGhost() {
+    ghostEl = document.createElement("div");
+    ghostEl.className = "cal-ghost";
+    dayEl.appendChild(ghostEl);
+  }
+
+  function engage() {
+    engaged = true;
+    makeGhost();
+    document.body.classList.add("dragging");
+    drawGhost(a, Math.max(b, a + SNAP_MIN));
+  }
 
   function drawGhost(lo, hi) {
     ghostEl.style.top = `${(lo / 60) * HOUR_H}px`;
@@ -260,40 +288,76 @@ function startDraw(e) {
     ghostEl.textContent = `${fmtTime(lo)} – ${fmtTime(hi)}`;
   }
 
+  const stopScroll = ev => { if (engaged) ev.preventDefault(); };
+
+  function cleanup() {
+    clearTimeout(holdTimer);
+    window.removeEventListener("pointermove", onMove);
+    window.removeEventListener("pointerup", onUp);
+    window.removeEventListener("pointercancel", onCancel);
+    window.removeEventListener("touchmove", stopScroll);
+    document.body.classList.remove("dragging");
+  }
+
   function onMove(ev) {
+    if (ev.pointerId !== e.pointerId) return;
+    if (!engaged) {                        // touch, still waiting for the hold
+      if (Math.hypot(ev.clientX - startX, ev.clientY - startY) > SCROLL_SLOP) {
+        cancelled = true;                  // user is scrolling — let the browser have it
+        cleanup();
+      }
+      return;
+    }
     b = minAt(ev.clientY);
     drawGhost(Math.min(a, b), Math.max(Math.min(a, b) + SNAP_MIN, Math.max(a, b)));
   }
 
-  function onUp() {
-    window.removeEventListener("mousemove", onMove);
-    window.removeEventListener("mouseup", onUp);
-    document.body.classList.remove("dragging");
+  function onUp(ev) {
+    if (ev.pointerId !== e.pointerId) return;
+    cleanup();
+    if (cancelled) return;
 
     let start = Math.min(a, b), end = Math.max(a, b);
-    if (end - start < SNAP_MIN) {          // simple click: default 1-hour block
+    if (end - start < SNAP_MIN) {          // simple click/tap: default 1-hour block
       end = Math.min(start + 60, DAY_END);
       start = end - 60;
     }
+    if (!ghostEl) makeGhost();             // touch tap skipped engage(): still show the ghost
+    drawGhost(start, end);
     openEntryDialog(null, { date: dayEl.dataset.date, start, end });
   }
 
-  window.addEventListener("mousemove", onMove);
-  window.addEventListener("mouseup", onUp);
+  function onCancel(ev) {
+    if (ev.pointerId !== e.pointerId) return;
+    cancelled = true;
+    cleanup();
+    removeGhost();
+  }
+
+  if (touch) holdTimer = setTimeout(engage, TOUCH_HOLD_MS);
+  window.addEventListener("pointermove", onMove);
+  window.addEventListener("pointerup", onUp);
+  window.addEventListener("pointercancel", onCancel);
+  if (touch) window.addEventListener("touchmove", stopScroll, { passive: false });
 }
 
 function removeGhost() {
   if (ghostEl) { ghostEl.remove(); ghostEl = null; }
 }
 
-/* ---------- drag a block to another day/time (Alt/⌘ = duplicate) ---------- */
-const DRAG_THRESHOLD = 4;   // px of movement before a click becomes a drag
+/* ---------- drag a block to another day/time (Alt/⌘ = duplicate) ----------
+   Mouse: click = edit, drag (after a 4px threshold) = move, Alt/⌘-drag = copy.
+   Touch: tap = edit, press-and-hold lifts the block, then drag moves it.
+   (Copying on touch: use the Duplicate button in the edit dialog.) */
+const DRAG_THRESHOLD = 4;   // px of mouse movement before a click becomes a drag
 
 function startBlockDrag(e, el) {
-  if (e.button !== 0) return;
+  if (e.button !== 0 || !e.isPrimary) return;
   const entry = Store.state.entries.find(x => x.id === el.dataset.entry);
   if (!entry || entry.start == null || entry.end == null) return;
-  e.preventDefault();
+
+  const touch = e.pointerType !== "mouse";
+  if (!touch) e.preventDefault();          // mouse: stop text selection, as before
   e.stopPropagation();       // don't let the day column start drawing a new block
 
   const duration = entry.end - entry.start;
@@ -306,18 +370,44 @@ function startBlockDrag(e, el) {
 
   const startX = e.clientX, startY = e.clientY;
   let moved = false, place = null;
+  let engaged = !touch;                    // mouse can start dragging right away
+  let cancelled = false;
+  let holdTimer = null;
   const isCopy = ev => ev.altKey || ev.metaKey || ev.ctrlKey;
 
+  function lift() {                        // visual "picked up" state
+    engaged = true;
+    moved = true;
+    document.body.classList.add("dragging-block");
+    el.classList.add("dragging");
+    hideTip();
+  }
+
+  const stopScroll = ev => { if (engaged) ev.preventDefault(); };
+
+  function cleanup() {
+    clearTimeout(holdTimer);
+    window.removeEventListener("pointermove", onMove);
+    window.removeEventListener("pointerup", onUp);
+    window.removeEventListener("pointercancel", onCancel);
+    window.removeEventListener("touchmove", stopScroll);
+    document.body.classList.remove("dragging-block");
+    el.classList.remove("dragging", "copying");
+  }
+
   function onMove(ev) {
+    if (ev.pointerId !== e.pointerId) return;
+    if (!engaged) {                        // touch, still waiting for the hold
+      if (Math.hypot(ev.clientX - startX, ev.clientY - startY) > SCROLL_SLOP) {
+        cancelled = true;                  // user is scrolling — bow out
+        cleanup();
+      }
+      return;
+    }
     if (!moved &&
         Math.abs(ev.clientX - startX) < DRAG_THRESHOLD &&
         Math.abs(ev.clientY - startY) < DRAG_THRESHOLD) return;
-    if (!moved) {
-      moved = true;
-      document.body.classList.add("dragging-block");
-      el.classList.add("dragging");
-      hideTip();
-    }
+    if (!moved) lift();
     const col = columnAt(ev.clientX, cols);
     place = placeBlock(duration, col.date, clientToMin(ev.clientY, col.top) - grabOffset);
     el.classList.toggle("copying", isCopy(ev));
@@ -328,12 +418,11 @@ function startBlockDrag(e, el) {
   }
 
   function onUp(ev) {
-    window.removeEventListener("mousemove", onMove);
-    window.removeEventListener("mouseup", onUp);
-    document.body.classList.remove("dragging-block");
-    el.classList.remove("dragging", "copying");
+    if (ev.pointerId !== e.pointerId) return;
+    cleanup();
+    if (cancelled) return;
 
-    if (!moved || !place) { openEntryDialog(entry); return; }  // no real drag -> treat as a click
+    if (!moved || !place) { openEntryDialog(entry); return; }  // click/tap -> edit
     if (isCopy(ev)) {
       Store.state.entries.push({ id: uid(), projectId: entry.projectId, description: entry.description, ...place });
       flashHint(`Copied to ${fmtTime(place.start)} on ${fmtDayLabel(place.date)}`);
@@ -344,8 +433,18 @@ function startBlockDrag(e, el) {
     renderAll();
   }
 
-  window.addEventListener("mousemove", onMove);
-  window.addEventListener("mouseup", onUp);
+  function onCancel(ev) {
+    if (ev.pointerId !== e.pointerId) return;
+    cancelled = true;
+    cleanup();
+    renderAll();               // put the block back where it was
+  }
+
+  if (touch) holdTimer = setTimeout(lift, TOUCH_HOLD_MS);
+  window.addEventListener("pointermove", onMove);
+  window.addEventListener("pointerup", onUp);
+  window.addEventListener("pointercancel", onCancel);
+  if (touch) window.addEventListener("touchmove", stopScroll, { passive: false });
 }
 
 /* ---------- copy / paste (⌘/Ctrl+C on a block, ⌘/Ctrl+V over a day) ---------- */
@@ -431,6 +530,20 @@ function initEntryDialog() {
     Store.save();
     renderAll();
   });
+
+  // Duplicate: the no-keyboard way to copy an entry (the only way on touch).
+  // Creates the copy, then reopens the dialog on it so date/time can be adjusted.
+  document.getElementById("dialogDuplicate").addEventListener("click", () => {
+    const en = Store.state.entries.find(x => x.id === dialogEntryId);
+    if (!en) return;
+    const copy = { ...en, id: uid() };
+    Store.state.entries.push(copy);
+    dlg.close();
+    Store.save();
+    renderAll();
+    openEntryDialog(copy);
+    flashHint("Duplicated — adjust the copy's date or time, then Save");
+  });
 }
 
 function openEntryDialog(entry, draft) {
@@ -451,6 +564,7 @@ function openEntryDialog(entry, draft) {
   document.getElementById("dialogStart").value = fmtTime(entry ? entry.start : draft.start);
   document.getElementById("dialogEnd").value = fmtTime(entry ? entry.end : draft.end);
   document.getElementById("dialogDelete").classList.toggle("hidden", !entry);
+  document.getElementById("dialogDuplicate").classList.toggle("hidden", !entry);
   updateDialogDuration();
 
   document.getElementById("entryDialog").showModal();
