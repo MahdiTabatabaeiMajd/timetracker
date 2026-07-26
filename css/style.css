@@ -931,3 +931,87 @@ body.dragging { user-select: none; -webkit-user-select: none; cursor: crosshair;
      scrollbar so the two can never be scrolled apart by hand. */
   .week-days { overflow-x: hidden; }
 }
+
+/* ---------- Phone layout (web version) ---------- */
+
+/* The ≤900px top bar gets crowded once the Back up / Restore buttons join it:
+   collapse them to icon-only and drop the credit line. */
+@media (max-width: 900px) {
+  .sidebar-foot { display: flex; align-items: center; gap: 2px; margin-left: auto; }
+  .backup-row { margin: 0; gap: 2px; }
+  .backup-row .nav-item { font-size: 0; gap: 0; padding: 9px; }  /* icon only */
+  .backup-row .nav-item svg { width: 19px; height: 19px; }
+  .credit { display: none; }
+
+  /* Keep intrinsic widths from inflating the page (.main clips), while the
+     day-header cells keep exactly the grid's column width so the header and
+     the grid columns stay aligned as they scroll together:
+     (week-grid min-width − gutter) / 7 days. */
+  .main { width: 100%; max-width: 100%; overflow-x: hidden; }
+  .week-days { min-width: 0; }
+  .wd-day { min-width: calc((660px - 64px) / 7); }
+
+  /* Hour labels stay visible while the grid scrolls sideways */
+  .wg-gutter, .wd-gutter {
+    position: sticky;
+    left: 0;
+    z-index: 6;
+    background: var(--surface);
+  }
+}
+
+/* True phone widths */
+@media (max-width: 600px) {
+  .main { padding: 14px 10px 44px; }
+  /* Top bar: compact items, and let the theme/backup group wrap to a second
+     row when a narrow screen can't fit everything beside the nav labels. */
+  .sidebar { padding: 6px 8px; flex-wrap: wrap; row-gap: 2px; }
+  .nav-item { padding: 7px 8px; gap: 6px; font-size: 14.5px; }
+  .nav-item svg { width: 19px; height: 19px; }
+  .brand { padding-right: 2px; }
+  .brand svg { width: 22px; height: 22px; }
+
+  /* Timer bar: description on its own line (from the 900px rules); shrink the
+     second row so project + clock + button always fit. */
+  .timer-bar { gap: 8px; padding: 12px; }
+  .timer-bar .select { flex: 1; min-width: 0; max-width: none; }
+  .timer-clock { font-size: 21px; min-width: 0; }
+  .timer-btn { width: 48px; height: 48px; }
+  .timer-btn svg { width: 22px; height: 22px; }
+
+  /* Toolbar above the entries: let everything wrap instead of clipping */
+  .entry-toolbar { flex-wrap: wrap; gap: 8px; }
+  .week-nav { flex-wrap: wrap; row-gap: 4px; }
+  .week-label { font-size: 15px; }
+  .week-total { font-size: 14.5px; }
+  .segmented button { padding: 8px 12px; font-size: 15px; }
+
+  /* Manual entry form: stack the wide fields, keep hours + Add together */
+  .entry-form #entryDate, .entry-form #entryProject, .entry-form #entryDesc {
+    flex: 1 1 100%;
+  }
+  .entry-form .hours-input { flex: 1 1 auto; width: auto; }
+
+  /* Week calendar: slimmer hour gutter buys the day columns real width.
+     Header cells match this breakpoint's column width: (560 − 40) / 7. */
+  .wg-gutter, .wd-gutter { width: 40px; }
+  .wg-hour { right: 3px; font-size: 11px; }
+  .week-grid { min-width: 560px; }
+  .wd-day { min-width: calc((560px - 40px) / 7); }
+  .wd-num { font-size: 20px; }
+  .hint { font-size: 14px; }
+
+  /* Entry dialog: Date/Start/End can't fit three-up at 335px — wrap them */
+  .dlg-row { flex-wrap: wrap; }
+  .dlg-row .dlg-field:first-child { flex: 1 1 100%; }
+  .dlg-row .dlg-field { flex: 1 1 40%; }
+  .dlg-actions { flex-wrap: wrap; }
+  .entry-dialog { padding: 18px 16px; }
+
+  /* Reports: wrap the header rows, full-width label inputs */
+  .reports-head { gap: 8px; }
+  .export-group { margin-left: 0; flex-wrap: wrap; }
+  .segmented { flex-wrap: wrap; }
+  .report-labels { flex-wrap: wrap; }
+  .input-sm { width: 100%; }
+}
