@@ -1,0 +1,12 @@
+# macOS
+.DS_Store
+# Editor / OS cruft
+*.swp
+Thumbs.db
+# Personal backups you might drop in the folder — never commit your data
+timetracker-backup-*.json
+
+# --- Not published to GitHub for now (kept locally; delete these lines to publish later) ---
+README.md
+docs/
+tests/
