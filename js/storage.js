@@ -16,7 +16,7 @@ function defaultData() {
     entries: [],
     timer: { running: false, startedAt: null, projectId: null, description: "" },
     settings: { theme: "auto", weekStartsMonday: true, entryView: "week",
-                reportBy: "", reportFor: "" },
+                reportBy: "", reportFor: "", csvSeparator: "auto" },
   };
 }
 

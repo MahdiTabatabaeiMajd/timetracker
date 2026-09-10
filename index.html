@@ -127,18 +127,34 @@
           <input type="date" id="rangeTo" class="input" aria-label="To date">
         </div>
         <div class="export-group">
-          <button id="csvBtn" class="btn ghost">
+          <button id="xlsxBtn" class="btn ghost" title="Download an Excel workbook (.xlsx) with an Entries sheet and a Summary sheet. Opens in proper columns in Excel, Numbers and Google Sheets on any computer.">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 4.5-4.5M12 15l-4.5-4.5M4 20h16"/></svg>
-            Export entries
-          </button>
-          <button id="csvSummaryBtn" class="btn ghost">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 4.5-4.5M12 15l-4.5-4.5M4 20h16"/></svg>
-            Export summary
+            Export to Excel
           </button>
           <button id="pdfBtn" class="btn ghost">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 18H4a1 1 0 0 1-1-1v-5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v5a1 1 0 0 1-1 1h-2M6 10V3h12v7M6 15h12v6H6Z"/></svg>
             Export PDF
           </button>
+          <details class="csv-menu" id="csvMenu">
+            <summary class="btn ghost" title="Plain-text CSV exports">
+              CSV
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+            </summary>
+            <div class="csv-panel">
+              <label class="csv-for">Opens correctly in
+                <select id="csvSeparator" class="input select" aria-label="Which program the CSV should open correctly in">
+                  <option value="auto">Automatic</option>
+                  <option value="comma">Excel (US/UK), Numbers, Google Sheets</option>
+                  <option value="semicolon">Excel (Denmark and most of Europe)</option>
+                </select>
+              </label>
+              <p class="csv-hint">Excel splits CSV columns differently in different countries. If a file opens as one messy column, choose the other option; it is remembered. For a file that opens correctly everywhere, use Export to Excel.</p>
+              <div class="csv-actions">
+                <button id="csvBtn" class="btn ghost">Entries (.csv)</button>
+                <button id="csvSummaryBtn" class="btn ghost">Summary (.csv)</button>
+              </div>
+            </div>
+          </details>
         </div>
       </div>
 
@@ -269,6 +285,7 @@
 <script src="js/projects.js"></script>
 <script src="js/calendar.js"></script>
 <script src="js/charts.js"></script>
+<script src="js/xlsx.js"></script>
 <script src="js/reports.js"></script>
 </body>
 </html>

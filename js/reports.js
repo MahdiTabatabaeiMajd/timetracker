@@ -36,8 +36,10 @@ function initReports() {
 
   document.getElementById("heatPrev").addEventListener("click", () => stepHeatMonth(-1));
   document.getElementById("heatNext").addEventListener("click", () => stepHeatMonth(1));
+  document.getElementById("xlsxBtn").addEventListener("click", exportExcel);
   document.getElementById("csvBtn").addEventListener("click", exportCsv);
   document.getElementById("csvSummaryBtn").addEventListener("click", exportSummaryCsv);
+  initCsvMenu();
 
   // "Prepared by / for" labels, stored in settings and shown on the PDF header
   for (const [id, key] of [["reportBy", "reportBy"], ["reportFor", "reportFor"]]) {
@@ -290,38 +292,30 @@ function renderTrendReport() {
   renderTrend(document.getElementById("trendChart"), weeks);
 }
 
-/* ---- CSV export ---- */
-function exportCsv() {
+/* ---- Exports ----
+   Export to Excel is the main export: a real .xlsx (see xlsx.js) opens in proper
+   columns on any computer, with dates, times and hours as real values.
+
+   CSV stays as a secondary format. Which character separates CSV columns is NOT
+   universal: Excel splits a .csv on the computer's "list separator", a semicolon
+   wherever the decimal sign is a comma (Denmark, Germany, France, …) and a comma
+   elsewhere. The browser can't see that setting (its language can differ from
+   the system's number format), so the CSV menu keeps a remembered choice:
+   settings.csvSeparator = "auto" | "comma" | "semicolon". "auto" makes a first
+   guess from the browser language; a wrong guess is one click away in the menu. */
+
+function entriesInRange() {
   const { from, to } = currentRange();
   const fromStr = toDateStr(from), toStr = toDateStr(to);
   const rows = Store.state.entries
     .filter(e => e.date >= fromStr && e.date <= toStr)
     .sort((a, b) => a.date.localeCompare(b.date));
-
-  if (!rows.length) return alert("No entries in the selected range.");
-
-  const csv = ["Date,Project,Description,Start,End,Hours,Duration"]
-    .concat(rows.map(e => [
-      e.date,
-      csvEsc(getProject(e.projectId)?.name || ""),
-      csvEsc(e.description),
-      e.start != null ? fmtTime(e.start) : "",
-      e.end != null ? fmtTime(e.end) : "",
-      e.hours.toFixed(2),
-      fmtHours(e.hours),
-    ].join(",")))
-    .join("\n");
-
-  downloadCsv(csv, `timetracker_${fromStr}_${toStr}.csv`);
+  return { rows, fromStr, toStr };
 }
 
-/* ---- summary CSV: hours per project & description ---- */
-function exportSummaryCsv() {
-  const { from, to } = currentRange();
-  const fromStr = toDateStr(from), toStr = toDateStr(to);
-  const rows = Store.state.entries.filter(e => e.date >= fromStr && e.date <= toStr);
-  if (!rows.length) return alert("No entries in the selected range.");
-
+/* Hours per project and description: projects by total (desc), each preceded by
+   an "(all)" total row. Shared by the Summary sheet and the summary CSV. */
+function summarizeByProject(rows) {
   const tree = new Map();
   for (const e of rows) {
     const pk = getProject(e.projectId)?.name || "(No project)";
@@ -329,19 +323,119 @@ function exportSummaryCsv() {
     if (!tree.has(pk)) tree.set(pk, new Map());
     tree.get(pk).set(dk, (tree.get(pk).get(dk) || 0) + e.hours);
   }
-
-  const lines = ["Project,Description,Hours,Duration"];
+  const out = [];
   const projects = [...tree.entries()].map(([name, descs]) => ({
     name, descs, hours: [...descs.values()].reduce((s, h) => s + h, 0),
   })).sort((a, b) => b.hours - a.hours);
   for (const p of projects) {
-    lines.push([csvEsc(p.name), csvEsc("(all)"), p.hours.toFixed(2), fmtHours(p.hours)].join(","));
+    out.push({ project: p.name, description: "(all)", hours: p.hours });
     for (const [desc, h] of [...p.descs.entries()].sort((a, b) => b[1] - a[1])) {
-      lines.push([csvEsc(p.name), csvEsc(desc), h.toFixed(2), fmtHours(h)].join(","));
+      out.push({ project: p.name, description: desc, hours: h });
     }
   }
+  return out;
+}
 
-  downloadCsv(lines.join("\n"), `timetracker_summary_${fromStr}_${toStr}.csv`);
+/* ---- Excel workbook: an "Entries" sheet and a "Summary" sheet ---- */
+function buildWorkbook(rows) {
+  const C = xlsxCell;
+  const entries = {
+    name: "Entries",
+    widths: [12, 26, 44, 8, 8, 8, 10],
+    rows: [
+      ["Date", "Project", "Description", "Start", "End", "Hours", "Duration"].map(C.header),
+      ...rows.map(e => [
+        C.date(e.date),
+        C.text(getProject(e.projectId)?.name || ""),
+        C.text(e.description),
+        e.start != null ? C.time(e.start) : null,
+        e.end != null ? C.time(e.end) : null,
+        C.num(e.hours),
+        C.duration(e.hours),
+      ]),
+    ],
+  };
+  const summary = {
+    name: "Summary",
+    widths: [26, 44, 8, 10],
+    rows: [
+      ["Project", "Description", "Hours", "Duration"].map(C.header),
+      ...summarizeByProject(rows).map(r =>
+        [C.text(r.project), C.text(r.description), C.num(r.hours), C.duration(r.hours)]),
+    ],
+  };
+  return [entries, summary];
+}
+
+function exportExcel() {
+  const { rows, fromStr, toStr } = entriesInRange();
+  if (!rows.length) return alert("No entries in the selected range.");
+  downloadFile(buildXlsx(buildWorkbook(rows)),
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    `timetracker_${fromStr}_${toStr}.xlsx`);
+}
+
+/* ---- CSV ---- */
+const CSV_DIALECTS = {
+  comma:     { sep: ",", decimal: "." },   // 1.50 — US/UK Excel, Numbers, Google Sheets
+  semicolon: { sep: ";", decimal: "," },   // 1,50 — Excel where the decimal sign is a comma
+};
+
+/* "comma" or "semicolon" for a BCP-47 language tag, from its decimal sign. */
+function detectCsvSeparator(lang) {
+  try {
+    const parts = new Intl.NumberFormat(lang).formatToParts(1.1);
+    return parts.some(p => p.type === "decimal" && p.value === ",") ? "semicolon" : "comma";
+  } catch (_) {
+    return "comma";
+  }
+}
+
+/* Resolve the user's preference ("auto" or missing = detect) to {key, sep, decimal}. */
+function csvDialect(pref, lang) {
+  const key = (pref === "comma" || pref === "semicolon") ? pref : detectCsvSeparator(lang);
+  return { key, ...CSV_DIALECTS[key] };
+}
+
+function currentCsvDialect() {
+  return csvDialect(Store.state.settings.csvSeparator, navigator.language);
+}
+
+function csvNum(n, d) {            // 1.5 -> "1.50" or "1,50"
+  return n.toFixed(2).replace(".", d.decimal);
+}
+
+function buildEntriesCsv(rows, d) {
+  return [["Date", "Project", "Description", "Start", "End", "Hours", "Duration"].join(d.sep)]
+    .concat(rows.map(e => [
+      e.date,
+      csvEsc(getProject(e.projectId)?.name || ""),
+      csvEsc(e.description),
+      e.start != null ? fmtTime(e.start) : "",
+      e.end != null ? fmtTime(e.end) : "",
+      csvNum(e.hours, d),
+      fmtHours(e.hours),
+    ].join(d.sep)))
+    .join("\n");
+}
+
+function exportCsv() {
+  const { rows, fromStr, toStr } = entriesInRange();
+  if (!rows.length) return alert("No entries in the selected range.");
+  downloadCsv(buildEntriesCsv(rows, currentCsvDialect()), `timetracker_${fromStr}_${toStr}.csv`);
+}
+
+function buildSummaryCsv(rows, d) {
+  return [["Project", "Description", "Hours", "Duration"].join(d.sep)]
+    .concat(summarizeByProject(rows).map(r =>
+      [csvEsc(r.project), csvEsc(r.description), csvNum(r.hours, d), fmtHours(r.hours)].join(d.sep)))
+    .join("\n");
+}
+
+function exportSummaryCsv() {
+  const { rows, fromStr, toStr } = entriesInRange();
+  if (!rows.length) return alert("No entries in the selected range.");
+  downloadCsv(buildSummaryCsv(rows, currentCsvDialect()), `timetracker_summary_${fromStr}_${toStr}.csv`);
 }
 
 function csvEsc(v) {
@@ -350,10 +444,43 @@ function csvEsc(v) {
   return `"${s.replace(/"/g, '""')}"`;
 }
 
-function downloadCsv(text, filename) {
+/* The CSV menu: a <details> disclosure holding the "Opens correctly in" choice
+   and the two CSV buttons. Closes after an export, on Escape, or on a click
+   anywhere outside it. */
+function initCsvMenu() {
+  const menu = document.getElementById("csvMenu");
+  const sel = document.getElementById("csvSeparator");
+  const names = {
+    comma: "Excel (US/UK), Numbers, Google Sheets",
+    semicolon: "Excel (Denmark and most of Europe)",
+  };
+  sel.querySelector('option[value="auto"]').textContent =
+    `Automatic: ${names[csvDialect("auto", navigator.language).key]}`;
+  const pref = Store.state.settings.csvSeparator;
+  sel.value = (pref === "comma" || pref === "semicolon") ? pref : "auto";
+  sel.addEventListener("change", () => {
+    Store.state.settings.csvSeparator = sel.value;
+    Store.save();
+  });
+  for (const id of ["csvBtn", "csvSummaryBtn"]) {
+    document.getElementById(id).addEventListener("click", () => { menu.open = false; });
+  }
+  menu.addEventListener("keydown", e => { if (e.key === "Escape") menu.open = false; });
+  document.addEventListener("pointerdown", e => { if (!menu.contains(e.target)) menu.open = false; });
+}
+
+/* ---- download helpers ---- */
+function downloadFile(data, type, filename) {
   const a = document.createElement("a");
-  a.href = URL.createObjectURL(new Blob([text], { type: "text/csv" }));
+  a.href = URL.createObjectURL(new Blob([data], { type }));
   a.download = filename;
   a.click();
   URL.revokeObjectURL(a.href);
+}
+
+function downloadCsv(text, filename) {
+  // Prefix the UTF-8 byte-order mark (U+FEFF): it tells Excel the file is UTF-8,
+  // so æ ø å and any other non-ASCII text survive instead of turning to garbage.
+  // Numbers, Google Sheets and LibreOffice simply ignore it.
+  downloadFile(String.fromCharCode(0xFEFF) + text, "text/csv;charset=utf-8", filename);
 }
