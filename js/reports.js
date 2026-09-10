@@ -60,11 +60,14 @@ function initReports() {
 }
 
 /* Printing always produces the light-theme report, whatever is on screen */
-let printPrevTheme;
+let printPrevTheme, printPrevTitle;
 
 function preparePrint() {
   printPrevTheme = document.documentElement.getAttribute("data-theme");
   document.documentElement.setAttribute("data-theme", "light");
+  printPrevTitle = document.title;
+  const range = currentRange();
+  document.title = exportBaseName(toDateStr(range.from), toDateStr(range.to));  // "Save as PDF" file name
   renderReports();
   const now = new Date();
   const meta = `${document.getElementById("rangeLabel").textContent} · exported ${now.getDate()} ${MONTHS[now.getMonth()]} ${now.getFullYear()}`;
@@ -81,6 +84,7 @@ function preparePrint() {
 function restoreAfterPrint() {
   if (printPrevTheme == null) document.documentElement.removeAttribute("data-theme");
   else document.documentElement.setAttribute("data-theme", printPrevTheme);
+  if (printPrevTitle != null) document.title = printPrevTitle;
 }
 
 function currentRange() {
@@ -313,6 +317,16 @@ function entriesInRange() {
   return { rows, fromStr, toStr };
 }
 
+/* File name for every export: "TimeSheet_<Prepared by>_<for>_<from>_to_<to>".
+   Spaces inside a label become underscores ("Mahdi Tabatabaei" -> Mahdi_Tabatabaei),
+   an empty label is left out, and characters file systems don't allow are dropped. */
+function exportBaseName(fromStr, toStr) {
+  const clean = s => String(s || "").replace(/[\\/:*?"<>|]/g, " ").trim().replace(/\s+/g, "_");
+  const { reportBy, reportFor } = Store.state.settings;
+  return ["TimeSheet", clean(reportBy), clean(reportFor), `${fromStr}_to_${toStr}`]
+    .filter(Boolean).join("_");
+}
+
 /* Hours per project and description: projects by total (desc), each preceded by
    an "(all)" total row. Shared by the Summary sheet and the summary CSV. */
 function summarizeByProject(rows) {
@@ -372,7 +386,7 @@ function exportExcel() {
   if (!rows.length) return alert("No entries in the selected range.");
   downloadFile(buildXlsx(buildWorkbook(rows)),
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    `timetracker_${fromStr}_${toStr}.xlsx`);
+    `${exportBaseName(fromStr, toStr)}.xlsx`);
 }
 
 /* ---- CSV ---- */
@@ -422,7 +436,7 @@ function buildEntriesCsv(rows, d) {
 function exportCsv() {
   const { rows, fromStr, toStr } = entriesInRange();
   if (!rows.length) return alert("No entries in the selected range.");
-  downloadCsv(buildEntriesCsv(rows, currentCsvDialect()), `timetracker_${fromStr}_${toStr}.csv`);
+  downloadCsv(buildEntriesCsv(rows, currentCsvDialect()), `${exportBaseName(fromStr, toStr)}.csv`);
 }
 
 function buildSummaryCsv(rows, d) {
@@ -435,7 +449,7 @@ function buildSummaryCsv(rows, d) {
 function exportSummaryCsv() {
   const { rows, fromStr, toStr } = entriesInRange();
   if (!rows.length) return alert("No entries in the selected range.");
-  downloadCsv(buildSummaryCsv(rows, currentCsvDialect()), `timetracker_summary_${fromStr}_${toStr}.csv`);
+  downloadCsv(buildSummaryCsv(rows, currentCsvDialect()), `${exportBaseName(fromStr, toStr)}_summary.csv`);
 }
 
 function csvEsc(v) {
